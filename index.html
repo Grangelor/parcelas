@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Parcelas">
+<meta name="theme-color" content="#2f6b3a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>Parcelas</title>
+<style>
+:root{
+  --fondo:#f2f2f7; --tarjeta:#fff; --texto:#1c1c1e; --suave:#6c6c70; --linea:#d8d8dc;
+  --verde:#2f6b3a; --verde-t:#fff; --rojo:#c0392b;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --fondo:#000; --tarjeta:#1c1c1e; --texto:#f2f2f7; --suave:#9a9aa0; --linea:#38383a; --verde:#4c9a5b; --verde-t:#0b1a0e; --rojo:#ff6b5b; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--fondo);color:var(--texto);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;-webkit-text-size-adjust:100%}
+body{padding-bottom:calc(32px + env(safe-area-inset-bottom))}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;justify-content:space-between;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--fondo);border-bottom:1px solid var(--linea)}
+header h1{font-size:19px;margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acciones{display:flex;gap:8px}
+main{padding:14px;max-width:640px;margin:0 auto}
+section{background:var(--tarjeta);border-radius:12px;padding:12px 14px;margin-bottom:14px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);margin:0 0 8px}
+label{display:block;font-size:14px;color:var(--suave);margin-bottom:10px}
+input:not([type=radio]):not([type=file]),textarea{display:block;width:100%;margin-top:4px;padding:10px;font:inherit;color:var(--texto);
+  background:var(--fondo);border:1px solid var(--linea);border-radius:8px}
+textarea{resize:vertical}
+button,.btn{font:inherit;font-weight:600;padding:10px 14px;border:0;border-radius:10px;background:var(--verde);color:var(--verde-t);cursor:pointer;display:inline-block}
+button.sec,.btn.sec{background:var(--fondo);color:var(--texto);border:1px solid var(--linea)}
+button.peligro{background:transparent;color:var(--rojo);border:1px solid var(--rojo);width:100%}
+button:disabled{opacity:.5}
+.fila{display:flex;gap:8px;flex-wrap:wrap}
+.estado{font-size:14px;color:var(--suave);margin:8px 0 0;min-height:1em}
+.estado.error{color:var(--rojo)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:10px 0 0;font-size:15px}
+dt{color:var(--suave)} dd{margin:0;text-align:right;word-break:break-word}
+.radio{display:flex;align-items:center;gap:10px;color:var(--texto);font-size:16px;padding:8px 0;border-bottom:1px solid var(--linea);margin:0}
+.radio:last-child{border-bottom:0}
+.radio input{width:22px;height:22px;margin:0;accent-color:var(--verde)}
+.lista{list-style:none;margin:0;padding:0;background:var(--tarjeta);border-radius:12px;overflow:hidden}
+.lista li{padding:12px 14px;border-bottom:1px solid var(--linea);display:flex;flex-direction:column;gap:2px;cursor:pointer}
+.lista li:last-child{border-bottom:0}
+.lista small{color:var(--suave);font-size:13px}
+.vacio{text-align:center;color:var(--suave);margin-top:60px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
+#visor{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px}
+#visor[hidden]{display:none}
+#visor img{max-width:100%;max-height:70vh;border-radius:8px}
+#visor .caja{background:var(--tarjeta);padding:18px;border-radius:14px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px}
+#visor .caja p{margin:0 0 4px}
+.version{text-align:center;color:var(--suave);font-size:12px;margin-top:20px}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="visor" hidden></div>
+
+<script>
+'use strict';
+const VERSION = 'v1';
+const SIGPAC_URL = 'https://sigpac-hubcloud.es/ogcapi/collections/recintos/items';
+const CAMPOS = 'provincia,municipio,agregado,zona,poligono,parcela,recinto,dn_surface,pendiente_media,altitud';
+const REPARTOS = [100, 75, 50, 25, 0];
+const ESPECIES = [
+  'Quercus pyrenaica (roble melojo)', 'Quercus ilex (encina)', 'Quercus faginea (quejigo)',
+  'Castanea sativa (castaño)', 'Pinus pinaster (pino resinero)', 'Pinus sylvestris (pino silvestre)',
+  'Fraxinus angustifolia (fresno)', 'Populus nigra (chopo)', 'Juniperus oxycedrus (enebro)',
+  'Cytisus scoparius (escoba)', 'Erica spp. (brezo)', 'Cistus ladanifer (jara pringosa)'
+];
+
+/* ---------- utilidades ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const fechaCorta = () => new Date().toISOString().slice(0, 10);
+
+/* ---------- almacenamiento (IndexedDB) ---------- */
+function abrirDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('parcelas', 1);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      db.createObjectStore('parcelas', { keyPath: 'id' });
+      db.createObjectStore('fotos', { keyPath: 'id' }).createIndex('parcelaId', 'parcelaId');
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+const dbp = abrirDB();
+
+async function op(store, modo, fn) {
+  const db = await dbp;
+  return new Promise((res, rej) => {
+    const t = db.transaction(store, modo);
+    let r;
+    try { r = fn(t.objectStore(store)); } catch (e) { rej(e); return; }
+    t.oncomplete = () => res(r && r.result);
+    t.onerror = () => rej(t.error);
+    t.onabort = () => rej(t.error);
+  });
+}
+const todas = () => op('parcelas', 'readonly', s => s.getAll());
+const guardarParcela = p => op('parcelas', 'readwrite', s => s.put(p));
+const fotosDe = id => op('fotos', 'readonly', s => s.index('parcelaId').getAll(id));
+const todasFotos = () => op('fotos', 'readonly', s => s.getAll());
+const borrarFoto = id => op('fotos', 'readwrite', s => s.delete(id));
+const borrarFotosDe = id => op('fotos', 'readwrite', s => {
+  const r = s.index('parcelaId').openKeyCursor(IDBKeyRange.only(id));
+  r.onsuccess = () => { const c = r.result; if (c) { s.delete(c.primaryKey); c.continue(); } };
+  return r;
+});
+const borrarParcela = async id => { await borrarFotosDe(id); await op('parcelas', 'readwrite', s => s.delete(id)); };
+
+/* ---------- modelo ---------- */
+function nuevaParcela() {
+  return { id: uid(), fecha: Date.now(), nombre: '', descripcion: '', lat: 0, lon: 0, precision: 0,
+    provincia: 0, municipio: 0, agregado: 0, zona: 0, poligono: 0, parcela: 0, recinto: 0,
+    superficieHa: 0, altitudM: 0, pendientePct: 0, esp1: '', esp2: '', esp3: '', forestal: 100, comentarios: '' };
+}
+const tieneSigpac = p => p.poligono && p.parcela;
+const referencia = p => tieneSigpac(p) ? [p.provincia, p.municipio, p.agregado, p.zona, p.poligono, p.parcela, p.recinto].join(':') : '';
+const titulo = p => p.nombre || (tieneSigpac(p) ? `Pol. ${p.poligono} Parc. ${p.parcela} Rec. ${p.recinto}` : 'Sin nombre');
+
+/* ---------- estado de pantalla ---------- */
+let actual = null;
+let temporizador = null;
+let urlsFotos = [];
+
+function programarGuardado() { clearTimeout(temporizador); temporizador = setTimeout(guardarYa, 400); }
+async function guardarYa() { clearTimeout(temporizador); if (actual) await guardarParcela(actual); }
+
+/* ---------- vista: lista ---------- */
+async function vistaLista() {
+  actual = null;
+  const ps = (await todas()).sort((a, b) => b.fecha - a.fecha);
+  $('#app').innerHTML = `
+    <header><h1>Parcelas</h1>
+      <div class="acciones"><button id="bCopia" class="sec">Copia</button><button id="bNueva">+ Nueva</button></div>
+    </header>
+    <main>
+      ${ps.length ? `<ul class="lista">${ps.map(p => `
+        <li data-id="${p.id}"><b>${esc(titulo(p))}</b>
+          ${referencia(p) ? `<small>${esc(referencia(p))}</small>` : ''}
+          <small>${p.forestal} % forestal · ${100 - p.forestal} % pastos</small></li>`).join('')}</ul>`
+        : '<p class="vacio">Sin parcelas.<br>Pulsa «+ Nueva» para registrar<br>la parcela donde estás.</p>'}
+      <p class="version">Parcelas ${VERSION}</p>
+    </main>`;
+  $('#bNueva').onclick = async () => {
+    const p = nuevaParcela();
+    await guardarParcela(p);
+    await vistaForm(p.id, true);
+  };
+  $('#bCopia').onclick = menuCopia;
+  document.querySelectorAll('.lista li').forEach(li => li.onclick = () => vistaForm(li.dataset.id, false));
+}
+
+/* ---------- vista: formulario ---------- */
+async function vistaForm(id, nueva) {
+  const ps = await todas();
+  actual = ps.find(p => p.id === id);
+  if (!actual) return vistaLista();
+
+  $('#app').innerHTML = `
+    <header><button id="bAtras" class="sec">‹ Parcelas</button><h1 id="tit">${esc(titulo(actual))}</h1></header>
+    <main>
+      <section><h2>Ubicación y SIGPAC</h2>
+        <div class="fila"><button id="bGPS">📍 Localizar con GPS</button><button id="bSig" class="sec">Consultar SIGPAC</button></div>
+        <p id="estado" class="estado"></p><dl id="ubic"></dl>
+      </section>
+      <section><h2>Parcela</h2>
+        <label>Nombre<input data-campo="nombre" value="${esc(actual.nombre)}" autocomplete="off"></label>
+        <label>Descripción<textarea data-campo="descripcion" rows="3">${esc(actual.descripcion)}</textarea></label>
+      </section>
+      <section><h2>Especies</h2>
+        <label>Especie principal<input list="especies" data-campo="esp1" value="${esc(actual.esp1)}" autocomplete="off"></label>
+        <label>2ª especie<input list="especies" data-campo="esp2" value="${esc(actual.esp2)}" autocomplete="off"></label>
+        <label>3ª especie<input list="especies" data-campo="esp3" value="${esc(actual.esp3)}" autocomplete="off"></label>
+        <datalist id="especies">${ESPECIES.map(e => `<option value="${esc(e)}">`).join('')}</datalist>
+      </section>
+      <section><h2>Uso del suelo</h2>
+        ${REPARTOS.map(v => `<label class="radio"><input type="radio" name="forestal" data-campo="forestal" value="${v}" ${actual.forestal === v ? 'checked' : ''}> ${v} % forestal / ${100 - v} % pastos</label>`).join('')}
+      </section>
+      <section><h2>Comentarios</h2>
+        <textarea data-campo="comentarios" rows="5">${esc(actual.comentarios)}</textarea>
+      </section>
+      <section><h2>Fotos</h2>
+        <label class="btn sec">📷 Añadir fotos<input id="inFotos" type="file" accept="image/*" multiple></label>
+        <div id="fotos" class="grid"></div>
+      </section>
+      <section><button id="bBorrar" class="peligro">Eliminar parcela</button></section>
+    </main>`;
+
+  $('main').addEventListener('input', e => {
+    const c = e.target.dataset && e.target.dataset.campo;
+    if (!c) return;
+    actual[c] = c === 'forestal' ? Number(e.target.value) : e.target.value;
+    if (c === 'nombre') $('#tit').textContent = titulo(actual);
+    programarGuardado();
+  });
+  $('#bAtras').onclick = async () => { await guardarYa(); vistaLista(); };
+  $('#bGPS').onclick = localizar;
+  $('#bSig').onclick = () => consultarSigpac();
+  $('#inFotos').onchange = async e => { await anadirFotos([...e.target.files]); e.target.value = ''; };
+  $('#bBorrar').onclick = async () => {
+    if (!confirm('¿Eliminar esta parcela y sus fotos?')) return;
+    await borrarParcela(actual.id);
+    vistaLista();
+  };
+
+  pintarUbicacion();
+  pintarFotos();
+  if (nueva || (!actual.lat && !actual.lon)) localizar();
+}
+
+function setEstado(msg, error = false) {
+  const e = $('#estado');
+  if (!e) return;
+  e.textContent = msg;
+  e.classList.toggle('error', error);
+}
+
+function pintarUbicacion() {
+  const p = actual, f = [];
+  if (p.lat || p.lon) {
+    f.push(['Coordenadas', `${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}`], ['Precisión GPS', `±${Math.round(p.precision)} m`]);
+  }
+  if (tieneSigpac(p)) {
+    f.push(['Referencia SIGPAC', referencia(p)], ['Pol. / parc. / rec.', `${p.poligono} / ${p.parcela} / ${p.recinto}`]);
+    if (p.superficieHa) f.push(['Superficie', p.superficieHa.toFixed(2) + ' ha']);
+    if (p.altitudM) f.push(['Altitud', Math.round(p.altitudM) + ' m']);
+    if (p.pendientePct) f.push(['Pendiente media', p.pendientePct.toFixed(1) + ' %']);
+  }
+  $('#ubic').innerHTML = f.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+}
+
+/* ---------- GPS ---------- */
+// Escucha unos segundos y se queda con la lectura más precisa.
+function obtenerPosicion() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Este dispositivo no tiene geolocalización.')); return; }
+    let mejor = null, errorUlt = null, terminado = false, id, t;
+    const fin = () => {
+      if (terminado) return;
+      terminado = true;
+      navigator.geolocation.clearWatch(id);
+      clearTimeout(t);
+      mejor ? resolve(mejor) : reject(errorUlt || new Error('Sin posición GPS.'));
+    };
+    id = navigator.geolocation.watchPosition(
+      p => { if (!mejor || p.coords.accuracy < mejor.coords.accuracy) mejor = p; if (p.coords.accuracy <= 8) fin(); },
+      e => { errorUlt = e; if (e.code === 1) fin(); },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    t = setTimeout(fin, 10000);
+  });
+}
+function mensajeGPS(e) {
+  if (e && e.code === 1) return 'Sin permiso de ubicación. Actívalo en Ajustes > Privacidad y seguridad > Localización > Safari (o la app web).';
+  if (e && e.code === 2) return 'No se pudo determinar la posición. Sal a cielo abierto e inténtalo de nuevo.';
+  return 'No se pudo obtener el GPS: ' + (e && e.message ? e.message : 'error desconocido');
+}
+
+async function localizar() {
+  const b = $('#bGPS'); if (b) b.disabled = true;
+  setEstado('Obteniendo posición GPS…');
+  try {
+    const pos = await obtenerPosicion();
+    actual.lat = pos.coords.latitude;
+    actual.lon = pos.coords.longitude;
+    actual.precision = pos.coords.accuracy;
+    await guardarYa();
+    pintarUbicacion();
+    await consultarSigpac();
+  } catch (e) {
+    setEstado(mensajeGPS(e), true);
+  } finally {
+    if (b) b.disabled = false;
+  }
+}
+
+/* ---------- SIGPAC (OGC API - Features del FEGA) ---------- */
+async function consultarSigpac() {
+  if (!actual.lat && !actual.lon) { setEstado('Primero localiza con GPS.', true); return; }
+  setEstado('Consultando SIGPAC…');
+  const d = 0.00001; // ~1 m alrededor del punto
+  const bbox = [actual.lon - d, actual.lat - d, actual.lon + d, actual.lat + d].map(v => v.toFixed(7)).join(',');
+  const url = `${SIGPAC_URL}?f=json&bbox=${bbox}&limit=5&properties=${CAMPOS}&skipGeometry=true`;
+  try {
+    const r = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const f = (j.features || [])[0];
+    if (!f) { setEstado('SIGPAC no devuelve ningún recinto en este punto.', true); return; }
+    const q = {};
+    Object.entries(f.properties || {}).forEach(([k, v]) => q[k.toLowerCase()] = v);
+    const n = v => { const x = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(x) ? x : 0; };
+    if (!n(q.poligono) || !n(q.parcela)) throw new Error('Respuesta sin polígono/parcela: ' + JSON.stringify(f.properties).slice(0, 200));
+    Object.assign(actual, {
+      provincia: n(q.provincia), municipio: n(q.municipio), agregado: n(q.agregado), zona: n(q.zona),
+      poligono: n(q.poligono), parcela: n(q.parcela), recinto: n(q.recinto),
+      superficieHa: n(q.dn_surface) / 10000, altitudM: n(q.altitud), pendientePct: n(q.pendiente_media) / 10
+    });
+    if (!actual.nombre) { actual.nombre = `Pol. ${actual.poligono} Parc. ${actual.parcela} Rec. ${actual.recinto}`; const i = $('[data-campo=nombre]'); if (i) i.value = actual.nombre; }
+    $('#tit').textContent = titulo(actual);
+    await guardarYa();
+    pintarUbicacion();
+    setEstado('Listo. Recinto SIGPAC identificado.');
+  } catch (e) {
+    setEstado('GPS guardado, pero no se pudo consultar SIGPAC (¿sin cobertura?). Reintenta con «Consultar SIGPAC». Detalle: ' + (e.message || e), true);
+  }
+}
+
+/* ---------- fotos ---------- */
+function reducir(file, max = 2048) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const e = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * e); c.height = Math.round(img.naturalHeight * e);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b => b ? res(b) : rej(new Error('No se pudo procesar la foto')), 'image/jpeg', 0.8);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Formato de imagen no soportado')); };
+    img.src = url;
+  });
+}
+async function anadirFotos(files) {
+  for (const f of files) {
+    try {
+      const blob = await reducir(f);
+      await op('fotos', 'readwrite', s => s.put({ id: uid(), parcelaId: actual.id, fecha: Date.now(), blob }));
+    } catch (e) { setEstado('Foto no añadida: ' + e.message, true); }
+  }
+  pintarFotos();
+}
+async function pintarFotos() {
+  urlsFotos.forEach(u => URL.revokeObjectURL(u)); urlsFotos = [];
+  const fs = (await fotosDe(actual.id)).sort((a, b) => a.fecha - b.fecha);
+  const cont = $('#fotos'); if (!cont) return;
+  cont.innerHTML = '';
+  fs.forEach(f => {
+    const u = URL.createObjectURL(f.blob); urlsFotos.push(u);
+    const im = document.createElement('img'); im.src = u; im.alt = 'Foto';
+    im.onclick = () => verFoto(f, u);
+    cont.appendChild(im);
+  });
+}
+function mostrarVisor(html) { const v = $('#visor'); v.innerHTML = html; v.hidden = false; }
+function cerrarVisor() { const v = $('#visor'); v.hidden = true; v.innerHTML = ''; }
+function verFoto(f, url) {
+  mostrarVisor(`<img src="${url}" alt="Foto"><div class="fila"><button id="vCerrar" class="sec">Cerrar</button><button id="vBorrar" class="peligro" style="width:auto;background:var(--tarjeta)">Eliminar foto</button></div>`);
+  $('#vCerrar').onclick = cerrarVisor;
+  $('#vBorrar').onclick = async () => { if (!confirm('¿Eliminar esta foto?')) return; await borrarFoto(f.id); cerrarVisor(); pintarFotos(); };
+}
+
+/* ---------- exportar / copia de seguridad ---------- */
+function menuCopia() {
+  mostrarVisor(`<div class="caja">
+    <p><b>Copia de seguridad</b></p>
+    <button id="mCsv">Exportar tabla (CSV)</button>
+    <button id="mJson">Copia completa con fotos (JSON)</button>
+    <label class="btn sec" style="text-align:center">Restaurar copia…<input id="mRest" type="file" accept=".json,application/json"></label>
+    <button id="mCerrar" class="sec">Cerrar</button>
+    <p id="mEstado" class="estado"></p></div>`);
+  $('#mCerrar').onclick = cerrarVisor;
+  $('#mCsv').onclick = async () => { await ejecutar(exportarCsv); };
+  $('#mJson').onclick = async () => { await ejecutar(copiaCompleta); };
+  $('#mRest').onchange = async e => { const f = e.target.files[0]; if (f) await restaurar(f); };
+}
+async function ejecutar(fn) {
+  const e = $('#mEstado'); e.textContent = 'Preparando…';
+  try { const file = await fn(); cerrarVisor(); await entregar(file); }
+  catch (err) { e.textContent = 'Error: ' + (err.message || err); e.classList.add('error'); }
+}
+function csvCelda(v) { return '"' + String(v ?? '').replace(/"/g, '""') + '"'; }
+async function exportarCsv() {
+  const ps = (await todas()).sort((a, b) => a.fecha - b.fecha);
+  const fotos = await todasFotos();
+  const cab = ['Nombre','Descripcion','Fecha','Latitud','Longitud','Precision_m','Provincia','Municipio','Agregado','Zona','Poligono','Parcela','Recinto','Superficie_ha','Altitud_m','Pendiente_pct','Especie1','Especie2','Especie3','Pct_forestal','Pct_pastos','Comentarios','N_fotos'];
+  const filas = ps.map(p => [p.nombre, p.descripcion, new Date(p.fecha).toISOString().slice(0, 10), p.lat, p.lon, Math.round(p.precision),
+    p.provincia, p.municipio, p.agregado, p.zona, p.poligono, p.parcela, p.recinto, p.superficieHa.toFixed(4), Math.round(p.altitudM), p.pendientePct.toFixed(1),
+    p.esp1, p.esp2, p.esp3, p.forestal, 100 - p.forestal, p.comentarios, fotos.filter(f => f.parcelaId === p.id).length].map(csvCelda).join(';'));
+  const csv = '﻿' + [cab.map(csvCelda).join(';'), ...filas].join('\r\n');
+  return new File([csv], `parcelas-${fechaCorta()}.csv`, { type: 'text/csv' });
+}
+const blobADataUrl = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
+async function copiaCompleta() {
+  const ps = await todas(), fs = await todasFotos(), fotos = [];
+  for (const f of fs) fotos.push({ id: f.id, parcelaId: f.parcelaId, fecha: f.fecha, dataUrl: await blobADataUrl(f.blob) });
+  const json = JSON.stringify({ app: 'parcelas', version: 1, exportado: new Date().toISOString(), parcelas: ps, fotos });
+  return new File([json], `parcelas-copia-${fechaCorta()}.json`, { type: 'application/json' });
+}
+async function restaurar(file) {
+  const e = $('#mEstado');
+  try {
+    const d = JSON.parse(await file.text());
+    if (d.app !== 'parcelas') throw new Error('No es una copia de esta app.');
+    for (const p of d.parcelas || []) await guardarParcela(p);
+    for (const f of d.fotos || []) {
+      const blob = await (await fetch(f.dataUrl)).blob();
+      await op('fotos', 'readwrite', s => s.put({ id: f.id, parcelaId: f.parcelaId, fecha: f.fecha, blob }));
+    }
+    cerrarVisor(); vistaLista();
+  } catch (err) { e.textContent = 'Error al restaurar: ' + (err.message || err); e.classList.add('error'); }
+}
+function descargar(file) {
+  const u = URL.createObjectURL(file), a = document.createElement('a');
+  a.href = u; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 10000);
+}
+async function entregar(file) {
+  const puede = () => navigator.canShare && navigator.canShare({ files: [file] });
+  try { if (puede()) { await navigator.share({ files: [file] }); return; } }
+  catch (e) { if (e.name === 'AbortError') return; }
+  // Si el sistema exige un nuevo toque para compartir, se ofrece un botón.
+  mostrarVisor(`<div class="caja"><p>Fichero listo:<br><b>${esc(file.name)}</b></p>
+    <button id="vGuardar">Guardar / compartir</button><button id="vCerrar" class="sec">Cerrar</button></div>`);
+  $('#vCerrar').onclick = cerrarVisor;
+  $('#vGuardar').onclick = async () => {
+    try { if (puede()) await navigator.share({ files: [file] }); else descargar(file); }
+    catch (e) { if (e.name !== 'AbortError') descargar(file); }
+  };
+}
+
+/* ---------- arranque ---------- */
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+vistaLista();
+</script>
+</body>
+</html>
